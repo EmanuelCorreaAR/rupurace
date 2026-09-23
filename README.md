@@ -65,7 +65,7 @@ go run ./cmd/rupurace --help
 Cuando haya tags de release:
 
 ```bash
-go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.1.0
+go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.1.1
 ```
 
 
@@ -87,6 +87,25 @@ invariante `balance >= 0`, exploración **exhaustiva**.
 ```bash
 go run ./cmd/rupurace explore --json
 go run ./cmd/rupurace explore --fail-on-violation   # exit 2 si hay violación
+go run ./cmd/rupurace explore --scenario lost-update -o witness.json
+```
+
+
+## Scenarios
+
+La abstracción `{worker, step} → state → invariant → witness` se prueba contra
+varios problemas distintos (motor en `internal/`, sin API pública todavía):
+
+| Scenario | Bug clásico | Invariante |
+|----------|-------------|------------|
+| `double-withdraw` | withdraw race / balance negativo | `balance >= 0` |
+| `lost-update` | read-modify-write perdido | `value == 2` |
+| `check-then-act` | TOCTOU al reclamar un recurso | `owners <= 1` |
+| `init-ordering` | publish antes de escribir el payload | `got == 0 \|\| got == expected` |
+
+```bash
+go run ./cmd/rupurace explore --scenario check-then-act -o witness.json
+go run ./cmd/rupurace replay witness.json
 ```
 
 
@@ -131,12 +150,11 @@ go run ./cmd/rupurace explore --fail-on-violation   # exit 2 si hay violación
 
 ## Estado
 
-**0.1.0** — Modelo cooperativo; `double-withdraw`; exploración exhaustiva;
-witness + replay determinista. Motor en `internal/`. Sin API Go pública.
+**0.1.1** — Battery de scenarios cooperativos (`double-withdraw`, `lost-update`,
+`check-then-act`, `init-ordering`) + hardening del motor. Sin API Go pública.
 
-**Next:** más scenarios; más adelante (no ahora) poda / hashing de estados /
-partial-order reduction. Instrumentar Go concurrente real viene después de
-que este núcleo quede sólido.
+**Next:** tests constitucionales del witness como producto; después bounded
+exploration / state hashing.
 
 
 ## Principios

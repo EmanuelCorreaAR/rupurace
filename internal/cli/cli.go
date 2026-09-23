@@ -66,12 +66,14 @@ Commands:
   help      Show this message
 
 Explore flags:
-  --scenario name       double-withdraw (default) | counter
+  --scenario name       double-withdraw (default) | lost-update |
+                        check-then-act | init-ordering | counter
   --strategy name       exhaustive (default) | seeded
   --seed N              Seed for seeded strategy (default: 0)
   --max-steps N         Cap for seeded strategy (default: 64)
   --balance N           double-withdraw initial balance (default: 100)
   --amount N            double-withdraw debit amount (default: 60)
+  --expected N          init-ordering payload (default: 7)
   --quota-a/--quota-b   counter quotas (default: 3)
   --max-value N         counter invariant limit (default: 100)
   --fail-on-violation   Exit 2 when an invariant fails
@@ -98,6 +100,7 @@ type exploreOpts struct {
 	maxSteps        int
 	balance         int
 	amount          int
+	expected        int
 	quotaA          int
 	quotaB          int
 	maxValue        int
@@ -113,6 +116,7 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 		maxSteps: 64,
 		balance:  100,
 		amount:   60,
+		expected: 7,
 		quotaA:   3,
 		quotaB:   3,
 		maxValue: 100,
@@ -137,10 +141,15 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 		opts.scenario = "double-withdraw"
 		params["balance"] = opts.balance
 		params["amount"] = opts.amount
+	case "init-ordering", "init_ordering":
+		opts.scenario = "init-ordering"
+		params["expected"] = opts.expected
 	case "counter":
 		params["quota_a"] = opts.quotaA
 		params["quota_b"] = opts.quotaB
 		params["max_value"] = opts.maxValue
+	case "lost-update", "lost_update", "check-then-act", "check_then_act":
+		// no params
 	}
 
 	loaded, err := demos.Load(opts.scenario, params)
@@ -392,6 +401,16 @@ func parseExploreFlags(args []string, opts *exploreOpts) ([]string, error) {
 				return nil, errors.New("--amount must be an integer")
 			}
 			opts.amount = n
+		case a == "--expected":
+			v, err := needValue(args, &i, a)
+			if err != nil {
+				return nil, err
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return nil, errors.New("--expected must be an integer")
+			}
+			opts.expected = n
 		case a == "--quota-a":
 			v, err := needValue(args, &i, a)
 			if err != nil {

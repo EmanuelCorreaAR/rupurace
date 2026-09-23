@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.1] - 2026-09-23
+
+### Added
+- Scenarios that stress the cooperative model: `lost-update`, `check-then-act`, `init-ordering`
+- Aggressive hardening tests: exhaustive determinism ×50, replay identity ×50, scrambled `Enabled`, Apply immutability
+- CLI coverage: explore → witness → replay for every failing built-in scenario
+
+### Changed
+- README lists the scenario battery; still no public Go API
+
 ## [0.1.0] - 2026-09-23
 
 ### Added

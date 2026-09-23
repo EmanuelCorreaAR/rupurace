@@ -9,6 +9,15 @@ import (
 	"github.com/EmanuelCorreaAR/rupurace/internal/scenario"
 )
 
+// Names lists built-in scenarios that exercise the cooperative model.
+var Names = []string{
+	"double-withdraw",
+	"lost-update",
+	"check-then-act",
+	"init-ordering",
+	"counter",
+}
+
 // Loaded is a built-in scenario ready for explore/replay.
 type Loaded struct {
 	Name   string
@@ -19,13 +28,22 @@ type Loaded struct {
 
 // Load builds a built-in scenario by name and params.
 func Load(name string, params map[string]any) (Loaded, error) {
+	if params == nil {
+		params = map[string]any{}
+	}
 	switch name {
 	case "double-withdraw", "double_withdraw":
 		return loadDoubleWithdraw(params)
+	case "lost-update", "lost_update":
+		return loadLostUpdate()
+	case "check-then-act", "check_then_act":
+		return loadCheckThenAct()
+	case "init-ordering", "init_ordering":
+		return loadInitOrdering(params)
 	case "counter":
 		return loadCounter(params)
 	default:
-		return Loaded{}, fmt.Errorf("unsupported scenario %q (double-withdraw, counter)", name)
+		return Loaded{}, fmt.Errorf("unsupported scenario %q (see: %v)", name, Names)
 	}
 }
 
@@ -44,6 +62,34 @@ func loadDoubleWithdraw(params map[string]any) (Loaded, error) {
 		Params: DoubleWithdrawParamsMap(p),
 		Scene:  scenario.DoubleWithdraw{Balance: p.Balance, Amount: p.Amount},
 		Specs:  []invariant.Spec{DoubleWithdrawInvariant()},
+	}, nil
+}
+
+func loadLostUpdate() (Loaded, error) {
+	return Loaded{
+		Name:   "lost-update",
+		Params: map[string]any{},
+		Scene:  scenario.LostUpdate{},
+		Specs:  []invariant.Spec{LostUpdateInvariant()},
+	}, nil
+}
+
+func loadCheckThenAct() (Loaded, error) {
+	return Loaded{
+		Name:   "check-then-act",
+		Params: map[string]any{},
+		Scene:  scenario.CheckThenAct{},
+		Specs:  []invariant.Spec{CheckThenActInvariant()},
+	}, nil
+}
+
+func loadInitOrdering(params map[string]any) (Loaded, error) {
+	expected := intFrom(params["expected"], 7)
+	return Loaded{
+		Name:   "init-ordering",
+		Params: map[string]any{"expected": expected},
+		Scene:  scenario.InitOrdering{Expected: expected},
+		Specs:  []invariant.Spec{InitOrderingInvariant(expected)},
 	}, nil
 }
 
@@ -83,6 +129,54 @@ func DoubleWithdrawInvariant() invariant.Spec {
 			s := st.(scenario.DoubleWithdrawState)
 			if s.Balance < 0 {
 				return errors.New("balance >= 0")
+			}
+			return nil
+		},
+	}
+}
+
+// LostUpdateInvariant fails when both workers finished and Value != 2.
+func LostUpdateInvariant() invariant.Spec {
+	return invariant.Spec{
+		Name: "value == 2",
+		Hold: func(st scenario.State) error {
+			s := st.(scenario.LostUpdateState)
+			if s.Done() && s.Value != 2 {
+				return errors.New("value == 2")
+			}
+			return nil
+		},
+	}
+}
+
+// CheckThenActInvariant is "owners <= 1".
+func CheckThenActInvariant() invariant.Spec {
+	return invariant.Spec{
+		Name: "owners <= 1",
+		Hold: func(st scenario.State) error {
+			s := st.(scenario.CheckThenActState)
+			if s.Owners > 1 {
+				return errors.New("owners <= 1")
+			}
+			return nil
+		},
+	}
+}
+
+// InitOrderingInvariant is "got == 0 || got == expected".
+func InitOrderingInvariant(expected int) invariant.Spec {
+	name := fmt.Sprintf("got == 0 || got == %d", expected)
+	return invariant.Spec{
+		Name: name,
+		Hold: func(st scenario.State) error {
+			s := st.(scenario.InitOrderingState)
+			if s.Got != 0 && s.Got != expected {
+				return errors.New(name)
+			}
+			// Catch the zero-payload publish race: observed publish but got stale zero
+			// after subscriber finished reading.
+			if s.NextS >= 2 && s.LocalS && s.Got != expected {
+				return errors.New(name)
 			}
 			return nil
 		},

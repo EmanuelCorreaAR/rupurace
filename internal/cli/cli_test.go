@@ -92,6 +92,28 @@ func TestExplore_JSONDeterministic(t *testing.T) {
 	}
 }
 
+func TestExplore_AllFailingScenarios(t *testing.T) {
+	for _, name := range []string{"double-withdraw", "lost-update", "check-then-act", "init-ordering"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			witnessPath := filepath.Join(dir, "witness.json")
+			var stdout, stderr bytes.Buffer
+			code := cli.Run([]string{
+				"explore", "--scenario", name, "-o", witnessPath, "--fail-on-violation",
+			}, &stdout, &stderr)
+			if code != cli.ExitGate {
+				t.Fatalf("explore want exit 2, got %d stderr=%s", code, stderr.String())
+			}
+			stdout.Reset()
+			stderr.Reset()
+			code = cli.Run([]string{"replay", witnessPath, "--fail-on-violation"}, &stdout, &stderr)
+			if code != cli.ExitGate {
+				t.Fatalf("replay want exit 2, got %d stderr=%s", code, stderr.String())
+			}
+		})
+	}
+}
+
 func TestHelpAndVersion(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := cli.Run(nil, &stdout, &stderr); code != cli.ExitOK {
