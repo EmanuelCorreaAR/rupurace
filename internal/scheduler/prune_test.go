@@ -55,36 +55,57 @@ func TestPrune_InterleaveReducesWork(t *testing.T) {
 	}
 }
 
-func TestPrune_SameFirstWitness(t *testing.T) {
+// TestPrune_CanonicalFirstWitnessPreserved is the prune contract:
+//
+//	Explore(unpruned).firstWitness ≡ Explore(pruned).firstWitness
+//
+// and the pruned witness still satisfies the constitutional replay equation.
+func TestPrune_CanonicalFirstWitnessPreserved(t *testing.T) {
 	for _, name := range []string{"double-withdraw", "lost-update", "check-then-act", "init-ordering"} {
 		t.Run(name, func(t *testing.T) {
 			loaded, err := demos.Load(name, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			plain := scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{})
-			withPrune := scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{Prune: true})
-			if plain.Witness == nil || withPrune.Witness == nil {
+
+			unpruned := scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{})
+			pruned := scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{Prune: true})
+			if unpruned.Witness == nil || pruned.Witness == nil {
 				t.Fatal("expected witnesses")
 			}
-			if plain.Witness.Invariant != withPrune.Witness.Invariant ||
-				plain.Witness.FailedAt != withPrune.Witness.FailedAt ||
-				!schedulesEqual(plain.Witness.Schedule, withPrune.Witness.Schedule) {
-				t.Fatalf("first witness diverged\nplain=%+v\nprune=%+v", plain.Witness, withPrune.Witness)
+
+			uw, pw := unpruned.Witness, pruned.Witness
+			if uw.Invariant != pw.Invariant {
+				t.Fatalf("invariant: unpruned=%q pruned=%q", uw.Invariant, pw.Invariant)
+			}
+			if uw.FailedAt != pw.FailedAt {
+				t.Fatalf("failedAt: unpruned=%d pruned=%d", uw.FailedAt, pw.FailedAt)
+			}
+			if !schedulesEqual(uw.Schedule, pw.Schedule) {
+				t.Fatalf("schedule diverged\nunpruned=%v\npruned=%v", uw.Schedule, pw.Schedule)
 			}
 
-			got, err := replay.Run(loaded.Scene, loaded.Specs, *withPrune.Witness)
-			if err != nil || got.Passed || got.Witness == nil {
-				t.Fatalf("replay failed: err=%v result=%+v", err, got)
+			got, err := replay.Run(loaded.Scene, loaded.Specs, *pw)
+			if err != nil {
+				t.Fatalf("replay: %v", err)
 			}
-			if got.Witness.FailedAt != withPrune.Witness.FailedAt {
-				t.Fatalf("replay failedAt mismatch")
+			if got.Passed || got.Witness == nil {
+				t.Fatalf("replay must fail: %+v", got)
+			}
+			if got.Witness.Invariant != pw.Invariant {
+				t.Fatalf("replay invariant: %q vs %q", pw.Invariant, got.Witness.Invariant)
+			}
+			if got.Witness.FailedAt != pw.FailedAt {
+				t.Fatalf("replay failedAt: %d vs %d", pw.FailedAt, got.Witness.FailedAt)
+			}
+			if !schedulesEqual(got.Witness.Schedule, pw.Schedule) {
+				t.Fatalf("replay schedule diverged")
 			}
 		})
 	}
 }
 
-func TestPrune_SameViolationCount(t *testing.T) {
+func TestPrune_ViolationSchedulesAreSubset(t *testing.T) {
 	loaded, err := demos.Load("check-then-act", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -193,5 +214,35 @@ func TestNodeKey_DistinguishesProgress(t *testing.T) {
 	enB := []scenario.Transition{{Worker: "A", Step: 1}}
 	if scheduler.NodeKey(stA, enA) == scheduler.NodeKey(stB, enB) {
 		t.Fatal("nodes with different progress must not share a prune key")
+	}
+}
+
+// TestNodeKey_SameStateDifferentEnabledMustNotCollapse documents why the prune
+// key is not merely fingerprint(state): identical business/state fingerprints
+// with different remaining futures must remain distinct exploration nodes.
+func TestNodeKey_SameStateDifferentEnabledMustNotCollapse(t *testing.T) {
+	st := scenario.CheckThenActState{} // identical state value
+	fp := scheduler.Fingerprint(st)
+
+	enNarrow := []scenario.Transition{{Worker: "A", Step: 0}}
+	enWide := []scenario.Transition{
+		{Worker: "A", Step: 0},
+		{Worker: "B", Step: 0},
+	}
+
+	if scheduler.Fingerprint(st) != fp {
+		t.Fatal("setup: state fingerprint must be stable")
+	}
+	// Adversarial: same state fingerprint, different enabled sets.
+	if scheduler.Fingerprint(st) != scheduler.Fingerprint(st) {
+		t.Fatal("same state must share fingerprint")
+	}
+	k1 := scheduler.NodeKey(st, enNarrow)
+	k2 := scheduler.NodeKey(st, enWide)
+	if k1 == k2 {
+		t.Fatal("NodeKey must not collapse same state fingerprint with different enabled sets — that is why the key is not only fingerprint(state)")
+	}
+	if !strings.Contains(k1, fp) || !strings.Contains(k2, fp) {
+		t.Fatal("NodeKey should embed the state fingerprint")
 	}
 }
