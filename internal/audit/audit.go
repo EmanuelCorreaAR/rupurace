@@ -16,6 +16,7 @@ var Method = map[string]string{
 	"seeded":     "seeded_scheduler_v1",
 	"replay":     "schedule_replay_v1",
 	"invariant":  "post_transition_v1",
+	"minimize":   "one_minimality_v1",
 	"transition": "cooperative_step_v1",
 }
 

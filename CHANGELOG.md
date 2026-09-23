@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0] - 2026-09-23
+
+### Added
+- 1-minimal witness derivation (`minimize` / `explore --minimize`)
+- Explicit `SemanticViolation` / `SameViolation` (invariant identity; failedAt may change)
+- Trial classification: invalid / no violation / different violation / same violation
+- Both artifacts kept: raw explore witness + derived `*.min.json`
+- Constitutional tests: Replay(W), Replay(M), SameViolation, 1-minimality, determinism
+
+### Changed
+- Product focus: explain better — not shortest-global, not synctest yet
+
 ## [0.2.1] - 2026-09-23
 
 ### Added

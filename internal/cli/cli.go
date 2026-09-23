@@ -13,6 +13,7 @@ import (
 
 	"github.com/EmanuelCorreaAR/rupurace/internal/audit"
 	"github.com/EmanuelCorreaAR/rupurace/internal/demos"
+	"github.com/EmanuelCorreaAR/rupurace/internal/minimize"
 	"github.com/EmanuelCorreaAR/rupurace/internal/replay"
 	"github.com/EmanuelCorreaAR/rupurace/internal/report"
 	"github.com/EmanuelCorreaAR/rupurace/internal/scheduler"
@@ -46,6 +47,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runExplore(args[1:], stdout, stderr)
 	case "replay":
 		return runReplay(args[1:], stdout, stderr)
+	case "minimize":
+		return runMinimize(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "rupurace: unknown command %q\n", args[0])
 		fmt.Fprintf(stderr, "Try 'rupurace --help' for usage.\n")
@@ -62,6 +65,7 @@ Usage:
 Commands:
   explore   Explore schedules for a built-in cooperative scenario
   replay    Replay a witness schedule deterministically
+  minimize  Derive a 1-minimal witness (keeps original evidence)
   version   Show version and exit
   help      Show this message
 
@@ -81,15 +85,17 @@ Explore flags:
   --stats               Collect exploration stats (space / states / time)
   --continue            Keep exploring after first violation (measurement)
   --prune               Skip re-expansion of equivalent exploration nodes
+  --minimize            Also derive a 1-minimal witness (writes *.min.json)
   --measure-memory      Approximate alloc delta with --stats (slower)
   --fail-on-violation   Exit 2 when an invariant fails
   --json                Emit deterministic JSON audit envelope
-  -o, --output path     Write witness.json on failure
+  -o, --output path     Write raw witness.json on failure
 
-Replay flags:
+Replay / minimize flags:
   <witness.json>        Witness artifact from explore -o
-  --fail-on-violation   Exit 2 when the violation is reproduced
+  --fail-on-violation   Exit 2 when the violation is reproduced (replay)
   --json                Emit deterministic JSON audit envelope
+  -o, --output path     Write minimized witness (minimize; default: *.min.json)
 
 Exit codes:
   0  success
@@ -115,6 +121,7 @@ type exploreOpts struct {
 	stats              bool
 	contAfterViolation bool
 	prune              bool
+	doMinimize         bool
 	measureMemory      bool
 	failOnViolation    bool
 	json               bool
@@ -211,6 +218,7 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 		"stats":                    opts.stats,
 		"continue_after_violation": opts.contAfterViolation,
 		"prune":                    opts.prune,
+		"minimize":                 opts.doMinimize,
 		"fail_on_violation":        opts.failOnViolation,
 		"json":                     opts.json,
 	}
@@ -224,6 +232,19 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 		printExploreHuman(stderr, result)
 	}
 
+	var pair *minimize.Pair
+	if result.Witness != nil && opts.doMinimize {
+		p, err := minimize.Minimize(loaded.Scene, loaded.Specs, *result.Witness)
+		if err != nil {
+			fmt.Fprintf(stderr, "rupurace explore: minimize: %v\n", err)
+			return ExitError
+		}
+		pair = &p
+		if !opts.json {
+			printMinimizeHuman(stderr, p)
+		}
+	}
+
 	if result.Witness != nil && opts.output != "" {
 		wf := report.NewWitnessFile(loaded.Name, loaded.Params, *result.Witness)
 		if err := writeJSON(opts.output, wf); err != nil {
@@ -231,7 +252,18 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 			return ExitError
 		}
 		if !opts.json {
-			fmt.Fprintf(stderr, "witness written to %s\n", opts.output)
+			fmt.Fprintf(stderr, "raw witness written to %s\n", opts.output)
+		}
+		if pair != nil {
+			minPath := minimizedPath(opts.output)
+			mf := report.NewWitnessFile(loaded.Name, loaded.Params, pair.Minimized)
+			if err := writeJSON(minPath, mf); err != nil {
+				fmt.Fprintf(stderr, "rupurace explore: write minimized witness: %v\n", err)
+				return ExitError
+			}
+			if !opts.json {
+				fmt.Fprintf(stderr, "minimized witness written to %s\n", minPath)
+			}
 		}
 	}
 
@@ -253,11 +285,29 @@ func printExploreHuman(w io.Writer, result witness.Result) {
 		fmt.Fprintf(w, "\n")
 		return
 	}
-	fmt.Fprintf(w, "violation at transition %d: %s\n", result.Witness.FailedAt, result.Witness.Invariant)
+	fmt.Fprintf(w, "Violation found: %s\n", result.Witness.Invariant)
+	fmt.Fprintf(w, "\n")
+	fmt.Fprintf(w, "Original witness\n")
+	fmt.Fprintf(w, "  transitions: %d\n", len(result.Witness.Schedule))
+	fmt.Fprintf(w, "  failedAt:    %d\n", result.Witness.FailedAt)
 	fmt.Fprintf(w, "schedule:\n")
 	for i, t := range result.Witness.Schedule {
 		fmt.Fprintf(w, "  %d. %s\n", i+1, t)
 	}
+}
+
+func printMinimizeHuman(w io.Writer, p minimize.Pair) {
+	fmt.Fprintf(w, "\n")
+	fmt.Fprintf(w, "Minimized witness\n")
+	fmt.Fprintf(w, "  transitions: %d\n", len(p.Minimized.Schedule))
+	fmt.Fprintf(w, "  removed:     %d\n", p.Removed)
+	fmt.Fprintf(w, "  failedAt:    %d\n", p.Minimized.FailedAt)
+	fmt.Fprintf(w, "  replay attempts: %d\n", p.ReplayAttempts)
+	fmt.Fprintf(w, "schedule:\n")
+	for i, t := range p.Minimized.Schedule {
+		fmt.Fprintf(w, "  %d. %s\n", i+1, t)
+	}
+	fmt.Fprintf(w, "Replay: deterministic ✓\n")
 }
 
 func printStats(w io.Writer, s *witness.Stats) {
@@ -384,6 +434,147 @@ func runReplay(args []string, stdout, stderr io.Writer) int {
 	return ExitOK
 }
 
+type minimizeOpts struct {
+	json   bool
+	output string
+	path   string
+}
+
+func runMinimize(args []string, stdout, stderr io.Writer) int {
+	opts := minimizeOpts{}
+	rest, err := parseMinimizeFlags(args, &opts)
+	if errors.Is(err, errHelp) {
+		printHelp(stdout)
+		return ExitOK
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "rupurace minimize: %v\n", err)
+		return ExitError
+	}
+	if len(rest) != 1 {
+		fmt.Fprintf(stderr, "rupurace minimize: require exactly one witness path\n")
+		return ExitError
+	}
+	opts.path = rest[0]
+	if opts.output == "" {
+		opts.output = minimizedPath(opts.path)
+	}
+
+	raw, err := os.ReadFile(opts.path)
+	if err != nil {
+		fmt.Fprintf(stderr, "rupurace minimize: %v\n", err)
+		return ExitError
+	}
+	var wf report.File
+	if err := json.Unmarshal(raw, &wf); err != nil {
+		fmt.Fprintf(stderr, "rupurace minimize: invalid witness JSON: %v\n", err)
+		return ExitError
+	}
+	if wf.Kind != "" && wf.Kind != report.WitnessKind {
+		fmt.Fprintf(stderr, "rupurace minimize: unsupported kind %q\n", wf.Kind)
+		return ExitError
+	}
+	if wf.Scenario == "" {
+		fmt.Fprintf(stderr, "rupurace minimize: missing scenario\n")
+		return ExitError
+	}
+
+	loaded, err := demos.LoadFromWitness(wf.Scenario, wf.Params)
+	if err != nil {
+		fmt.Fprintf(stderr, "rupurace minimize: %v\n", err)
+		return ExitError
+	}
+	original := witness.Witness{
+		Schedule:  report.ToSchedule(wf.Schedule),
+		Invariant: wf.Invariant,
+		Violation: wf.Violation,
+		FailedAt:  wf.FailedAt,
+	}
+
+	pair, err := minimize.Minimize(loaded.Scene, loaded.Specs, original)
+	if err != nil {
+		fmt.Fprintf(stderr, "rupurace minimize: %v\n", err)
+		return ExitError
+	}
+
+	view := map[string]any{
+		"original": report.FromResult(witness.Result{
+			Passed:   false,
+			Steps:    len(pair.Original.Schedule),
+			Schedule: pair.Original.Schedule,
+			Witness:  &pair.Original,
+			Strategy: "explore",
+		}, loaded.Name, loaded.Params),
+		"minimized": report.NewWitnessFile(loaded.Name, loaded.Params, pair.Minimized),
+		"removed":   pair.Removed,
+		"attempts":  pair.ReplayAttempts,
+	}
+	envelope := audit.Build("minimize", map[string]any{
+		"path":     opts.path,
+		"scenario": loaded.Name,
+		"params":   loaded.Params,
+	}, map[string]any{
+		"json":   opts.json,
+		"output": opts.output,
+	}, view)
+
+	if err := emit(envelope, opts.json, stdout); err != nil {
+		fmt.Fprintf(stderr, "rupurace minimize: %v\n", err)
+		return ExitError
+	}
+	if !opts.json {
+		fmt.Fprintf(stderr, "Violation found: %s\n\n", pair.Original.Invariant)
+		fmt.Fprintf(stderr, "Original witness\n")
+		fmt.Fprintf(stderr, "  transitions: %d\n", len(pair.Original.Schedule))
+		printMinimizeHuman(stderr, pair)
+	}
+
+	mf := report.NewWitnessFile(loaded.Name, loaded.Params, pair.Minimized)
+	if err := writeJSON(opts.output, mf); err != nil {
+		fmt.Fprintf(stderr, "rupurace minimize: write: %v\n", err)
+		return ExitError
+	}
+	if !opts.json {
+		fmt.Fprintf(stderr, "raw witness preserved at %s\n", opts.path)
+		fmt.Fprintf(stderr, "minimized witness written to %s\n", opts.output)
+	}
+	return ExitOK
+}
+
+func minimizedPath(reportPath string) string {
+	if strings.HasSuffix(reportPath, ".min.json") {
+		return reportPath
+	}
+	if strings.HasSuffix(reportPath, ".json") {
+		return strings.TrimSuffix(reportPath, ".json") + ".min.json"
+	}
+	return reportPath + ".min.json"
+}
+
+func parseMinimizeFlags(args []string, opts *minimizeOpts) ([]string, error) {
+	var rest []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--json":
+			opts.json = true
+		case a == "-o" || a == "--output":
+			v, err := needValue(args, &i, a)
+			if err != nil {
+				return nil, err
+			}
+			opts.output = v
+		case a == "-h" || a == "--help":
+			return nil, errHelp
+		case strings.HasPrefix(a, "-"):
+			return nil, fmt.Errorf("unknown flag %s", a)
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return rest, nil
+}
+
 func emit(envelope audit.Envelope, asJSON bool, stdout io.Writer) error {
 	if !asJSON {
 		return nil
@@ -420,6 +611,8 @@ func parseExploreFlags(args []string, opts *exploreOpts) ([]string, error) {
 			opts.contAfterViolation = true
 		case a == "--prune":
 			opts.prune = true
+		case a == "--minimize":
+			opts.doMinimize = true
 		case a == "--measure-memory":
 			opts.measureMemory = true
 		case a == "--scenario":

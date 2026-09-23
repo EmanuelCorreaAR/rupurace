@@ -65,7 +65,7 @@ go run ./cmd/rupurace --help
 Cuando haya tags de release:
 
 ```bash
-go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.2.1
+go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.3.0
 ```
 
 
@@ -77,8 +77,16 @@ El corazón del proyecto:
 # encuentra un bug y guarda el witness
 go run ./cmd/rupurace explore -o witness.json
 
+# reduce el contraejemplo a 1-minimal (mantiene el original)
+go run ./cmd/rupurace explore --minimize -o witness.json
+# → witness.json (evidencia) + witness.min.json (explicación)
+
+# o a partir de un witness ya guardado
+go run ./cmd/rupurace minimize witness.json
+
 # Reproduce el mismo fallo, siempre
 go run ./cmd/rupurace replay witness.json
+go run ./cmd/rupurace replay witness.min.json
 ```
 
 Scenario default: `double-withdraw` — 2 workers × 3 steps, balance compartido,
@@ -169,13 +177,31 @@ se exploran una sola vez: puede bajar el conteo de schedules/violaciones
 
 `rupurace replay witness.json` falla en la misma transición, cada vez.
 
+### Minimización (0.3.0)
+
+RupuRace distingue evidencia de explicación:
+
+| Artefacto | Rol |
+|-----------|-----|
+| `witness.json` | Evidencia cruda del explorador (`Woriginal`) |
+| `witness.min.json` | Contraejemplo 1-minimal derivado (`Wminimal`) |
+
+`Minimize` promete: no se puede quitar una transición más sin dejar de
+reproducir **la misma violación semántica** (mismo invariante). `failedAt`
+puede cambiar. No promete todavía el shortest-global.
+
+```bash
+go run ./cmd/rupurace explore --scenario lost-update --minimize -o witness.json
+```
+
 
 ## Commands
 
 | Command | Rol |
 |---------|-----|
-| `explore` | Explora schedules; con `-o` escribe witness al fallar |
+| `explore` | Explora schedules; con `-o` escribe witness al fallar; `--minimize` también escribe `*.min.json` |
 | `replay` | Reejecuta un witness de forma determinista |
+| `minimize` | Deriva un witness 1-minimal a partir de uno existente |
 | `version` | Muestra la versión |
 
 
@@ -190,10 +216,10 @@ se exploran una sola vez: puede bajar el conteo de schedules/violaciones
 
 ## Estado
 
-**0.2.1** — Poda opt-in por nodo de exploración (`--prune`); `EquivalentPruned > 0`
-sin romper Explore→Witness→Replay. Baseline medible sigue en default sin poda.
+**0.3.0** — Witness 1-minimal: Explore → Original + Minimal → Replay de ambos,
+misma violación semántica, determinismo. Sin shortest-global ni synctest.
 
-**Next:** witness minimization; partial-order ideas más adelante. Sin API Go pública.
+**Next:** adopción sobre Go real; partial-order ideas más adelante. Sin API Go pública.
 
 
 ## Principios

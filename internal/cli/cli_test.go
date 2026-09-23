@@ -24,7 +24,7 @@ func TestHeart_FindWitnessReplay(t *testing.T) {
 	if code != cli.ExitOK {
 		t.Fatalf("explore exit %d stderr=%s", code, stderr.String())
 	}
-	if !bytes.Contains(stderr.Bytes(), []byte("violation")) {
+	if !bytes.Contains(stderr.Bytes(), []byte("Violation found")) {
 		t.Fatalf("expected violation output: %s", stderr.String())
 	}
 
@@ -114,6 +114,36 @@ func TestExplore_AllFailingScenarios(t *testing.T) {
 	}
 }
 
+func TestExplore_MinimizeWritesBothArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	rawPath := filepath.Join(dir, "witness.json")
+	var stdout, stderr bytes.Buffer
+	code := cli.Run([]string{
+		"explore", "--scenario", "check-then-act",
+		"--minimize", "-o", rawPath,
+	}, &stdout, &stderr)
+	if code != cli.ExitOK {
+		t.Fatalf("exit %d stderr=%s", code, stderr.String())
+	}
+	minPath := filepath.Join(dir, "witness.min.json")
+	if _, err := os.Stat(rawPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(minPath); err != nil {
+		t.Fatalf("missing minimized artifact: %v\n%s", err, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("Minimized witness")) {
+		t.Fatalf("expected minimize UX: %s", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = cli.Run([]string{"replay", minPath, "--fail-on-violation"}, &stdout, &stderr)
+	if code != cli.ExitGate {
+		t.Fatalf("minimized replay want exit 2, got %d stderr=%s", code, stderr.String())
+	}
+}
+
 func TestHelpAndVersion(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := cli.Run(nil, &stdout, &stderr); code != cli.ExitOK {
@@ -122,6 +152,9 @@ func TestHelpAndVersion(t *testing.T) {
 	stdout.Reset()
 	if code := cli.Run([]string{"version"}, &stdout, &stderr); code != cli.ExitOK {
 		t.Fatalf("version exit %d", code)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("rupurace")) {
+		t.Fatalf("version output: %s", stdout.String())
 	}
 }
 
