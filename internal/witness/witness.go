@@ -1,4 +1,3 @@
-// Package witness holds failure evidence and exploration results.
 package witness
 
 import "github.com/EmanuelCorreaAR/rupurace/internal/scenario"
@@ -15,6 +14,22 @@ type Witness struct {
 	FailedAt int
 }
 
+// Stats summarizes an exploration run. Used to confront combinatorial explosion
+// before implementing pruning. EquivalentPruned stays 0 until state hashing
+// actually cuts the search.
+type Stats struct {
+	Workers           int    `json:"workers"`
+	Transitions       int    `json:"transitions"` // steps in a full interleaving (sum of per-worker steps)
+	PossibleSchedules uint64 `json:"possibleSchedules,omitempty"`
+	SchedulesExplored int    `json:"schedulesExplored"`
+	StatesVisited     int    `json:"statesVisited"`
+	UniqueStates      int    `json:"uniqueStates"`
+	Violations        int    `json:"violations"`
+	EquivalentPruned  int    `json:"equivalentPruned"`
+	DurationNanos     int64  `json:"durationNanos"`
+	HeapBytes         uint64 `json:"heapBytes,omitempty"`
+}
+
 // Result is the outcome of Explore or Replay.
 type Result struct {
 	Passed   bool
@@ -23,4 +38,5 @@ type Result struct {
 	Witness  *Witness
 	Explored int // schedules fully explored (exhaustive); 0 if unused
 	Strategy string
+	Stats    *Stats
 }

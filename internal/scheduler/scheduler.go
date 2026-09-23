@@ -26,6 +26,16 @@ type Config struct {
 type ExhaustiveConfig struct {
 	// MaxDepth caps schedule length (0 = unlimited).
 	MaxDepth int
+	// ContinueAfterViolation keeps searching after the first failure (for measurement).
+	// When false (default), returns on the first witness — constitutional explore path.
+	ContinueAfterViolation bool
+	// Measure enables Stats collection (states, unique states, duration, …).
+	Measure bool
+	// MeasureMemory records an approximate TotalAlloc delta (slower; forces a GC).
+	MeasureMemory bool
+	// Workers / StepsPerWorker optionally fill PossibleSchedules via multinomial.
+	Workers        int
+	StepsPerWorker int
 }
 
 // Explore runs a seeded schedule exploration for sc.
@@ -53,16 +63,36 @@ func Explore(sc scenario.Scenario, specs []invariant.Spec, cfg Config) witness.R
 }
 
 // ExploreExhaustive DFS-searches all schedules in a stable order.
-// The first violating schedule (by that order) is returned as the Witness.
-// If every schedule passes, Result.Passed is true.
+// By default it returns on the first violating schedule (constitutional path).
+// With ContinueAfterViolation it measures the full space and counts violations.
 func ExploreExhaustive(sc scenario.Scenario, specs []invariant.Spec, cfg ExhaustiveConfig) witness.Result {
 	type frame struct {
 		state    scenario.State
 		schedule scenario.Schedule
 	}
 
+	var meter *exploreMeter
+	if cfg.Measure {
+		meter = newMeter(cfg.MeasureMemory)
+		if cfg.Workers > 0 && cfg.StepsPerWorker > 0 {
+			counts := make([]int, cfg.Workers)
+			for i := range counts {
+				counts[i] = cfg.StepsPerWorker
+			}
+			meter.stats.Workers = cfg.Workers
+			meter.stats.Transitions = cfg.Workers * cfg.StepsPerWorker
+			meter.stats.PossibleSchedules = Multinomial(counts)
+		}
+	}
+
 	stack := []frame{{state: sc.Initial(), schedule: nil}}
+	if meter != nil {
+		meter.visit(sc.Initial())
+	}
+
 	explored := 0
+	var first *witness.Witness
+	var firstSched scenario.Schedule
 
 	for len(stack) > 0 {
 		n := len(stack) - 1
@@ -71,12 +101,18 @@ func ExploreExhaustive(sc scenario.Scenario, specs []invariant.Spec, cfg Exhaust
 
 		if cfg.MaxDepth > 0 && len(fr.schedule) >= cfg.MaxDepth {
 			explored++
+			if meter != nil {
+				meter.stats.SchedulesExplored++
+			}
 			continue
 		}
 
 		enabled := sortedEnabled(sc.Enabled(fr.state))
 		if len(enabled) == 0 {
 			explored++
+			if meter != nil {
+				meter.stats.SchedulesExplored++
+			}
 			continue
 		}
 
@@ -85,23 +121,57 @@ func ExploreExhaustive(sc scenario.Scenario, specs []invariant.Spec, cfg Exhaust
 			t := enabled[i]
 			nextState := sc.Apply(fr.state, t)
 			nextSched := append(fr.schedule[:len(fr.schedule):len(fr.schedule)], t)
+			if meter != nil {
+				meter.visit(nextState)
+			}
 
 			if w := invariant.Check(nextState, nextSched, specs); w != nil {
-				return witness.Result{
-					Passed:   false,
-					Steps:    len(nextSched),
-					Schedule: nextSched,
-					Witness:  w,
-					Explored: explored,
-					Strategy: "exhaustive",
+				if meter != nil {
+					meter.stats.Violations++
+					meter.stats.SchedulesExplored++
 				}
+				if first == nil {
+					wc := *w
+					first = &wc
+					firstSched = nextSched
+				}
+				if !cfg.ContinueAfterViolation {
+					res := witness.Result{
+						Passed:   false,
+						Steps:    len(nextSched),
+						Schedule: nextSched,
+						Witness:  w,
+						Explored: explored,
+						Strategy: "exhaustive",
+					}
+					if meter != nil {
+						res.Stats = meter.finish()
+					}
+					return res
+				}
+				explored++
+				continue // do not expand past a violation
 			}
 
 			stack = append(stack, frame{state: nextState, schedule: nextSched})
 		}
 	}
 
-	return witness.Result{Passed: true, Explored: explored, Strategy: "exhaustive"}
+	res := witness.Result{
+		Passed:   first == nil,
+		Explored: explored,
+		Strategy: "exhaustive",
+	}
+	if first != nil {
+		res.Passed = false
+		res.Witness = first
+		res.Schedule = firstSched
+		res.Steps = len(firstSched)
+	}
+	if meter != nil {
+		res.Stats = meter.finish()
+	}
+	return res
 }
 
 func sortedEnabled(enabled []scenario.Transition) []scenario.Transition {

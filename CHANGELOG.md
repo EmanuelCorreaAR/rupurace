@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0] - 2026-09-23
+
+### Added
+- Exploration `Stats`: possible/executed schedules, states visited/unique, violations, duration
+- Synthetic scenario `interleave` (W workers × S steps) to confront combinatorial explosion
+- Flags: `--stats`, `--continue`, `--measure-memory`, `--workers`, `--steps`
+- Multinomial `PossibleSchedules` for fixed per-worker step counts
+- Measurement tests: 2×5 = 252 full explorations; stats determinism; continue counts violations
+
+### Changed
+- Exhaustive default path unchanged (stop on first witness) — constitutional equation protected
+- Still no public Go API; EquivalentPruned stays 0 until hashing actually prunes
+
 ## [0.1.2] - 2026-09-23
 
 ### Added

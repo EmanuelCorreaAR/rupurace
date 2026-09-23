@@ -15,6 +15,7 @@ var Names = []string{
 	"lost-update",
 	"check-then-act",
 	"init-ordering",
+	"interleave",
 	"counter",
 }
 
@@ -40,6 +41,8 @@ func Load(name string, params map[string]any) (Loaded, error) {
 		return loadCheckThenAct()
 	case "init-ordering", "init_ordering":
 		return loadInitOrdering(params)
+	case "interleave":
+		return loadInterleave(params)
 	case "counter":
 		return loadCounter(params)
 	default:
@@ -90,6 +93,23 @@ func loadInitOrdering(params map[string]any) (Loaded, error) {
 		Params: map[string]any{"expected": expected},
 		Scene:  scenario.InitOrdering{Expected: expected},
 		Specs:  []invariant.Spec{InitOrderingInvariant(expected)},
+	}, nil
+}
+
+func loadInterleave(params map[string]any) (Loaded, error) {
+	workers := intFrom(params["workers"], 2)
+	steps := intFrom(params["steps"], 3)
+	if workers < 1 || steps < 1 {
+		return Loaded{}, fmt.Errorf("interleave requires workers>=1 and steps>=1")
+	}
+	return Loaded{
+		Name: "interleave",
+		Params: map[string]any{
+			"workers": workers,
+			"steps":   steps,
+		},
+		Scene: scenario.Interleave{Workers: workers, StepsPerWorker: steps},
+		Specs: nil, // pure measurement substrate — no invariant
 	}, nil
 }
 

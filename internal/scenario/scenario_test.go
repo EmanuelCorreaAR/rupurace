@@ -16,6 +16,7 @@ func TestScenarios_EnabledApplyContract(t *testing.T) {
 		{"lost-update", scenario.LostUpdate{}},
 		{"check-then-act", scenario.CheckThenAct{}},
 		{"init-ordering", scenario.InitOrdering{Expected: 7}},
+		{"interleave", scenario.Interleave{Workers: 2, StepsPerWorker: 2}},
 		{"counter", scenario.Counter{QuotaA: 2, QuotaB: 2}},
 	}
 

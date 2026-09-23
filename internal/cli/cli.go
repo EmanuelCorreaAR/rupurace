@@ -67,15 +67,20 @@ Commands:
 
 Explore flags:
   --scenario name       double-withdraw (default) | lost-update |
-                        check-then-act | init-ordering | counter
+                        check-then-act | init-ordering | interleave | counter
   --strategy name       exhaustive (default) | seeded
   --seed N              Seed for seeded strategy (default: 0)
   --max-steps N         Cap for seeded strategy (default: 64)
   --balance N           double-withdraw initial balance (default: 100)
   --amount N            double-withdraw debit amount (default: 60)
   --expected N          init-ordering payload (default: 7)
+  --workers N           interleave workers (default: 2)
+  --steps N             interleave steps per worker (default: 3)
   --quota-a/--quota-b   counter quotas (default: 3)
   --max-value N         counter invariant limit (default: 100)
+  --stats               Collect exploration stats (space / states / time)
+  --continue            Keep exploring after first violation (measurement)
+  --measure-memory      Approximate alloc delta with --stats (slower)
   --fail-on-violation   Exit 2 when an invariant fails
   --json                Emit deterministic JSON audit envelope
   -o, --output path     Write witness.json on failure
@@ -94,19 +99,24 @@ Exit codes:
 }
 
 type exploreOpts struct {
-	scenario        string
-	strategy        string
-	seed            uint64
-	maxSteps        int
-	balance         int
-	amount          int
-	expected        int
-	quotaA          int
-	quotaB          int
-	maxValue        int
-	failOnViolation bool
-	json            bool
-	output          string
+	scenario           string
+	strategy           string
+	seed               uint64
+	maxSteps           int
+	balance            int
+	amount             int
+	expected           int
+	workers            int
+	steps              int
+	quotaA             int
+	quotaB             int
+	maxValue           int
+	stats              bool
+	contAfterViolation bool
+	measureMemory      bool
+	failOnViolation    bool
+	json               bool
+	output             string
 }
 
 func runExplore(args []string, stdout, stderr io.Writer) int {
@@ -117,6 +127,8 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 		balance:  100,
 		amount:   60,
 		expected: 7,
+		workers:  2,
+		steps:    3,
 		quotaA:   3,
 		quotaB:   3,
 		maxValue: 100,
@@ -144,6 +156,9 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 	case "init-ordering", "init_ordering":
 		opts.scenario = "init-ordering"
 		params["expected"] = opts.expected
+	case "interleave":
+		params["workers"] = opts.workers
+		params["steps"] = opts.steps
 	case "counter":
 		params["quota_a"] = opts.quotaA
 		params["quota_b"] = opts.quotaB
@@ -161,7 +176,16 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 	var result witness.Result
 	switch opts.strategy {
 	case "exhaustive":
-		result = scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{})
+		exCfg := scheduler.ExhaustiveConfig{
+			ContinueAfterViolation: opts.contAfterViolation,
+			Measure:                opts.stats,
+			MeasureMemory:          opts.measureMemory,
+		}
+		if loaded.Name == "interleave" {
+			exCfg.Workers = opts.workers
+			exCfg.StepsPerWorker = opts.steps
+		}
+		result = scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, exCfg)
 	case "seeded":
 		result = scheduler.Explore(loaded.Scene, loaded.Specs, scheduler.Config{
 			Seed:     opts.seed,
@@ -178,11 +202,13 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 		"params":   loaded.Params,
 	}
 	configuration := map[string]any{
-		"strategy":          opts.strategy,
-		"seed":              opts.seed,
-		"max_steps":         opts.maxSteps,
-		"fail_on_violation": opts.failOnViolation,
-		"json":              opts.json,
+		"strategy":                 opts.strategy,
+		"seed":                     opts.seed,
+		"max_steps":                opts.maxSteps,
+		"stats":                    opts.stats,
+		"continue_after_violation": opts.contAfterViolation,
+		"fail_on_violation":        opts.failOnViolation,
+		"json":                     opts.json,
 	}
 	envelope := audit.Build("explore", input, configuration, view)
 
@@ -212,6 +238,9 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 }
 
 func printExploreHuman(w io.Writer, result witness.Result) {
+	if result.Stats != nil {
+		printStats(w, result.Stats)
+	}
 	if result.Passed {
 		fmt.Fprintf(w, "passed — strategy=%s", result.Strategy)
 		if result.Explored > 0 {
@@ -225,6 +254,38 @@ func printExploreHuman(w io.Writer, result witness.Result) {
 	for i, t := range result.Witness.Schedule {
 		fmt.Fprintf(w, "  %d. %s\n", i+1, t)
 	}
+}
+
+func printStats(w io.Writer, s *witness.Stats) {
+	fmt.Fprintf(w, "Exploration complete\n")
+	fmt.Fprintf(w, "\n")
+	if s.PossibleSchedules > 0 {
+		fmt.Fprintf(w, "Schedules considered: %d\n", s.PossibleSchedules)
+	}
+	fmt.Fprintf(w, "Schedules executed:   %d\n", s.SchedulesExplored)
+	fmt.Fprintf(w, "States visited:       %d\n", s.StatesVisited)
+	fmt.Fprintf(w, "Unique states:        %d\n", s.UniqueStates)
+	fmt.Fprintf(w, "Equivalent pruned:    %d\n", s.EquivalentPruned)
+	fmt.Fprintf(w, "Violations:           %d\n", s.Violations)
+	if s.Workers > 0 {
+		fmt.Fprintf(w, "Workers:              %d\n", s.Workers)
+		fmt.Fprintf(w, "Transitions:          %d\n", s.Transitions)
+	}
+	fmt.Fprintf(w, "Duration:             %s\n", formatNanos(s.DurationNanos))
+	if s.HeapBytes > 0 {
+		fmt.Fprintf(w, "Alloc delta:          %d bytes\n", s.HeapBytes)
+	}
+	fmt.Fprintf(w, "\n")
+}
+
+func formatNanos(ns int64) string {
+	if ns < 1_000_000 {
+		return fmt.Sprintf("%dµs", ns/1_000)
+	}
+	if ns < 1_000_000_000 {
+		return fmt.Sprintf("%.2fms", float64(ns)/1_000_000)
+	}
+	return fmt.Sprintf("%.2fs", float64(ns)/1_000_000_000)
 }
 
 type replayOpts struct {
@@ -349,6 +410,12 @@ func parseExploreFlags(args []string, opts *exploreOpts) ([]string, error) {
 			opts.json = true
 		case a == "--fail-on-violation":
 			opts.failOnViolation = true
+		case a == "--stats":
+			opts.stats = true
+		case a == "--continue":
+			opts.contAfterViolation = true
+		case a == "--measure-memory":
+			opts.measureMemory = true
 		case a == "--scenario":
 			v, err := needValue(args, &i, a)
 			if err != nil {
@@ -411,6 +478,26 @@ func parseExploreFlags(args []string, opts *exploreOpts) ([]string, error) {
 				return nil, errors.New("--expected must be an integer")
 			}
 			opts.expected = n
+		case a == "--workers":
+			v, err := needValue(args, &i, a)
+			if err != nil {
+				return nil, err
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 {
+				return nil, errors.New("--workers must be a positive integer")
+			}
+			opts.workers = n
+		case a == "--steps":
+			v, err := needValue(args, &i, a)
+			if err != nil {
+				return nil, err
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 {
+				return nil, errors.New("--steps must be a positive integer")
+			}
+			opts.steps = n
 		case a == "--quota-a":
 			v, err := needValue(args, &i, a)
 			if err != nil {

@@ -65,7 +65,7 @@ go run ./cmd/rupurace --help
 Cuando haya tags de release:
 
 ```bash
-go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.1.2
+go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.2.0
 ```
 
 
@@ -102,11 +102,34 @@ varios problemas distintos (motor en `internal/`, sin API pública todavía):
 | `lost-update` | read-modify-write perdido | `value == 2` |
 | `check-then-act` | TOCTOU al reclamar un recurso | `owners <= 1` |
 | `init-ordering` | publish antes de escribir el payload | `got == 0 \|\| got == expected` |
+| `interleave` | sustrato sintético W×S (medir explosión) | (ninguna) |
 
 ```bash
 go run ./cmd/rupurace explore --scenario check-then-act -o witness.json
 go run ./cmd/rupurace replay witness.json
+
+# medir el espacio antes de podar
+go run ./cmd/rupurace explore --scenario interleave --workers 2 --steps 5 --stats
 ```
+
+
+## Medir la explosión
+
+Antes de partial-order reduction o hashing que pode, RupuRace mide:
+
+```text
+Exploration complete
+
+Schedules considered: 252
+Schedules executed:   252
+States visited:       …
+Unique states:        …
+Equivalent pruned:    0
+Violations:           0
+```
+
+`--continue` sigue explorando después del primer fallo (cuenta Violations).
+`Equivalent pruned` queda en 0 hasta que el motor realmente pode.
 
 
 ## Witness
@@ -150,10 +173,11 @@ go run ./cmd/rupurace replay witness.json
 
 ## Estado
 
-**0.1.2** — Propiedad constitucional testeada en `replay`; round-trip `witness_v1`
-como producto. Battery de scenarios en `0.1.1`. Motor en `internal/`. Sin API Go pública.
+**0.2.0** — Medición del espacio de búsqueda (`--stats`, `interleave`).
+La ecuación constitucional Explore→Witness→Replay sigue protegida (default:
+stop on first violation). Sin API Go pública.
 
-**Next:** bounded exploration / state hashing cuando el espacio crezca; después
+**Next:** state hashing que pode de verdad (`EquivalentPruned > 0`); después
 witness minimization. Instrumentar Go concurrente real viene más tarde.
 
 

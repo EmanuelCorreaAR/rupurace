@@ -15,12 +15,13 @@ type Step struct {
 
 // ResultView is the audit result payload for explore/replay.
 type ResultView struct {
-	Passed   bool   `json:"passed"`
-	Steps    int    `json:"steps"`
-	Strategy string `json:"strategy,omitempty"`
-	Explored int    `json:"explored,omitempty"`
-	Schedule []Step `json:"schedule"`
-	Witness  *File  `json:"witness,omitempty"`
+	Passed   bool           `json:"passed"`
+	Steps    int            `json:"steps"`
+	Strategy string         `json:"strategy,omitempty"`
+	Explored int            `json:"explored,omitempty"`
+	Schedule []Step         `json:"schedule"`
+	Witness  *File          `json:"witness,omitempty"`
+	Stats    *witness.Stats `json:"stats,omitempty"`
 }
 
 // File is the portable witness artifact for `rupurace replay`.
@@ -80,6 +81,9 @@ func FromResult(r witness.Result, scenarioName string, params map[string]any) Re
 	if r.Witness != nil {
 		f := NewWitnessFile(scenarioName, params, *r.Witness)
 		view.Witness = &f
+	}
+	if r.Stats != nil {
+		view.Stats = r.Stats
 	}
 	return view
 }
