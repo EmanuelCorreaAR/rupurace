@@ -65,7 +65,7 @@ go run ./cmd/rupurace --help
 Cuando haya tags de release:
 
 ```bash
-go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.3.0
+go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.4.0
 ```
 
 
@@ -216,15 +216,14 @@ go run ./cmd/rupurace explore --scenario lost-update --minimize -o witness.json
 
 ## Estado
 
-**0.3.0** — Witness 1-minimal: Explore → Original + Minimal → Replay de ambos,
-misma violación semántica, determinismo.
+**0.4.0** — Puente mínimo a Go real: `internal/gate` (`Await` + Quiesce) ejecuta
+goroutines reales y entra al pipeline consolidado Explore → `witness_v1` →
+Minimize → Replay. Demo: check-then-act en vivo. Sin API pública todavía.
 
-**Spike (post-0.3.0):** `spike/synctest/` investigó `testing/synctest` como puente
-a Go real. Veredicto **B**: sirve para tiempo/quiescencia en el harness, **no**
-reemplaza Explore. El puente viable sigue necesitando puntos de control
-explícitos. Ver `spike/synctest/NOTES.md`.
+**Spike:** `spike/synctest/NOTES.md` — veredicto B (synctest ≠ Explore).
 
-**Next:** diseño mínimo de gates/hooks sobre Go real (hacia 0.4.x). Sin API Go pública.
+**Next:** pulir semántica del punto de control; más demos; eventualmente CLI.
+Sin reescritura obligatoria del SUT al modelo abstracto `{worker,step}` tables.
 
 
 ## Principios

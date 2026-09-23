@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0] - 2026-09-23
+
+### Added
+- `internal/gate`: real goroutines + `Await` control points → same Explore/Witness/Minimize/Replay pipeline
+- Live check-then-act demo (TOCTOU) without rewriting logic as `Apply` tables
+- `ReplayScenario` adapter for linear Replay/Minimize only (not DFS Explore)
+- Constitutional tests: live Explore → witness_v1 path → Minimize → 1-minimal Replay
+
+### Notes
+- No public `rupurace.Point` API yet — naming/semantics still provisional (`Await`)
+- `synctest` remains harness-only (spike verdict B); Quiesce is park/exit based
+- `go 1.25` floor unchanged (from synctest spike)
+
 ## [0.3.0] - 2026-09-23
 
 ### Added

@@ -76,6 +76,19 @@ No encaja como reemplazo del scheduler de RupuRace.
 2. Usar `synctest` solo en el harness de tests del puente.
 3. Seguir emitiendo `witness_v1` + `*.min.json` — el destino del pipeline no cambia.
 
+## Seguimiento (0.4.0)
+
+Implementado en `internal/gate`:
+
+- `Controller.Await` / `Release` / `Quiesce` / `Go`
+- `Explore` (mundo fresco por candidato)
+- `Replay` + `ReplayScenario` → Minimize
+- Demo live `CheckThenAct`
+
+```bash
+go test ./internal/gate/ -v
+```
+
 ## Cómo correr
 
 ```bash
