@@ -65,7 +65,7 @@ go run ./cmd/rupurace --help
 Cuando haya tags de release:
 
 ```bash
-go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.2.0
+go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.2.1
 ```
 
 
@@ -110,26 +110,43 @@ go run ./cmd/rupurace replay witness.json
 
 # medir el espacio antes de podar
 go run ./cmd/rupurace explore --scenario interleave --workers 2 --steps 5 --stats
+
+# podar nodos de exploración equivalentes (estado + enabled)
+go run ./cmd/rupurace explore --scenario interleave --workers 2 --steps 5 --stats --prune
 ```
 
 
 ## Medir la explosión
 
-Antes de partial-order reduction o hashing que pode, RupuRace mide:
+Antes de partial-order reduction, RupuRace mide — y opcionalmente pode:
 
 ```text
-Exploration complete
-
+# sin --prune (baseline 0.2.0)
 Schedules considered: 252
 Schedules executed:   252
-States visited:       …
-Unique states:        …
+States visited:       923
+Unique states:        36
 Equivalent pruned:    0
-Violations:           0
+
+# con --prune (0.2.1)
+Schedules considered: 252
+Schedules executed:   <252
+States visited:       <923
+Unique states:        36
+Equivalent pruned:    >0
 ```
 
+`UniqueStates` es medición. `EquivalentPruned` es optimización realmente aplicada.
+
+La equivalencia **no** es solo el estado de negocio: el nodo de exploración es
+`fingerprint(state) + enabled transitions`, para no confundir futuros distintos
+con el mismo dato compartido.
+
+Con `--prune`, prefijos que conmutan al mismo nodo (p.ej. `A0 B0` ≡ `B0 A0`)
+se exploran una sola vez: puede bajar el conteo de schedules/violaciones
+*por camino*, pero el primer witness determinista y el bug siguen alcanzables.
+
 `--continue` sigue explorando después del primer fallo (cuenta Violations).
-`Equivalent pruned` queda en 0 hasta que el motor realmente pode.
 
 
 ## Witness
@@ -173,12 +190,10 @@ Violations:           0
 
 ## Estado
 
-**0.2.0** — Medición del espacio de búsqueda (`--stats`, `interleave`).
-La ecuación constitucional Explore→Witness→Replay sigue protegida (default:
-stop on first violation). Sin API Go pública.
+**0.2.1** — Poda opt-in por nodo de exploración (`--prune`); `EquivalentPruned > 0`
+sin romper Explore→Witness→Replay. Baseline medible sigue en default sin poda.
 
-**Next:** state hashing que pode de verdad (`EquivalentPruned > 0`); después
-witness minimization. Instrumentar Go concurrente real viene más tarde.
+**Next:** witness minimization; partial-order ideas más adelante. Sin API Go pública.
 
 
 ## Principios

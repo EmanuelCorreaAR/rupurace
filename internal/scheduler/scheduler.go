@@ -33,6 +33,10 @@ type ExhaustiveConfig struct {
 	Measure bool
 	// MeasureMemory records an approximate TotalAlloc delta (slower; forces a GC).
 	MeasureMemory bool
+	// Prune skips re-expansion of exploration nodes already expanded
+	// (NodeKey = state fingerprint + enabled set). Default false keeps the
+	// 0.2.0 measurement baseline honest (EquivalentPruned stays 0).
+	Prune bool
 	// Workers / StepsPerWorker optionally fill PossibleSchedules via multinomial.
 	Workers        int
 	StepsPerWorker int
@@ -90,6 +94,7 @@ func ExploreExhaustive(sc scenario.Scenario, specs []invariant.Spec, cfg Exhaust
 		meter.visit(sc.Initial())
 	}
 
+	expanded := map[string]struct{}{}
 	explored := 0
 	var first *witness.Witness
 	var firstSched scenario.Schedule
@@ -114,6 +119,17 @@ func ExploreExhaustive(sc scenario.Scenario, specs []invariant.Spec, cfg Exhaust
 				meter.stats.SchedulesExplored++
 			}
 			continue
+		}
+
+		if cfg.Prune {
+			key := NodeKey(fr.state, enabled)
+			if _, seen := expanded[key]; seen {
+				if meter != nil {
+					meter.stats.EquivalentPruned++
+				}
+				continue
+			}
+			expanded[key] = struct{}{}
 		}
 
 		// Push in reverse so the lowest-ordered transition is tried first (DFS).

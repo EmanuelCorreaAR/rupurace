@@ -80,6 +80,7 @@ Explore flags:
   --max-value N         counter invariant limit (default: 100)
   --stats               Collect exploration stats (space / states / time)
   --continue            Keep exploring after first violation (measurement)
+  --prune               Skip re-expansion of equivalent exploration nodes
   --measure-memory      Approximate alloc delta with --stats (slower)
   --fail-on-violation   Exit 2 when an invariant fails
   --json                Emit deterministic JSON audit envelope
@@ -113,6 +114,7 @@ type exploreOpts struct {
 	maxValue           int
 	stats              bool
 	contAfterViolation bool
+	prune              bool
 	measureMemory      bool
 	failOnViolation    bool
 	json               bool
@@ -180,6 +182,7 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 			ContinueAfterViolation: opts.contAfterViolation,
 			Measure:                opts.stats,
 			MeasureMemory:          opts.measureMemory,
+			Prune:                  opts.prune,
 		}
 		if loaded.Name == "interleave" {
 			exCfg.Workers = opts.workers
@@ -207,6 +210,7 @@ func runExplore(args []string, stdout, stderr io.Writer) int {
 		"max_steps":                opts.maxSteps,
 		"stats":                    opts.stats,
 		"continue_after_violation": opts.contAfterViolation,
+		"prune":                    opts.prune,
 		"fail_on_violation":        opts.failOnViolation,
 		"json":                     opts.json,
 	}
@@ -414,6 +418,8 @@ func parseExploreFlags(args []string, opts *exploreOpts) ([]string, error) {
 			opts.stats = true
 		case a == "--continue":
 			opts.contAfterViolation = true
+		case a == "--prune":
+			opts.prune = true
 		case a == "--measure-memory":
 			opts.measureMemory = true
 		case a == "--scenario":

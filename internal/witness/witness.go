@@ -24,7 +24,7 @@ type Stats struct {
 	SchedulesExplored int    `json:"schedulesExplored"`
 	StatesVisited     int    `json:"statesVisited"`
 	UniqueStates      int    `json:"uniqueStates"`
-	Violations        int    `json:"violations"`
+	Violations        int    `json:"violations"` // violating leaves hit during search (path-sensitive; may drop under prune when prefixes commute)
 	EquivalentPruned  int    `json:"equivalentPruned"`
 	DurationNanos     int64  `json:"durationNanos"`
 	HeapBytes         uint64 `json:"heapBytes,omitempty"`

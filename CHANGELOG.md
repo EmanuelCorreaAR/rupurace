@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1] - 2026-09-23
+
+### Added
+- Safe exploration-node pruning (`--prune`): `NodeKey = state fingerprint + enabled set`
+- `EquivalentPruned > 0` when re-expansion is skipped
+- Tests: prune reduces schedules/states on `interleave`; same first witness; prune violation schedules ⊆ full search; replay intact
+
+### Changed
+- Default remains unpruned (0.2.0 baseline). Pruning is opt-in so measurement stays honest.
+
 ## [0.2.0] - 2026-09-23
 
 ### Added

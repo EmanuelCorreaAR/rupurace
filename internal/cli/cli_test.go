@@ -145,3 +145,21 @@ func TestExplore_InterleaveStats(t *testing.T) {
 		t.Fatalf("expected pruned=0 before hashing: %s", stderr.String())
 	}
 }
+
+func TestExplore_InterleavePrune(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := cli.Run([]string{
+		"explore", "--scenario", "interleave",
+		"--workers", "2", "--steps", "5",
+		"--stats", "--prune",
+	}, &stdout, &stderr)
+	if code != cli.ExitOK {
+		t.Fatalf("exit %d stderr=%s", code, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("Schedules considered: 252")) {
+		t.Fatalf("missing considered: %s", stderr.String())
+	}
+	if bytes.Contains(stderr.Bytes(), []byte("Equivalent pruned:    0")) {
+		t.Fatalf("expected Equivalent pruned > 0: %s", stderr.String())
+	}
+}

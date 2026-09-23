@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/big"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/EmanuelCorreaAR/rupurace/internal/scenario"
@@ -14,6 +16,28 @@ import (
 // Built-in scenarios use %#v; later scenarios may specialize.
 func Fingerprint(state scenario.State) string {
 	return fmt.Sprintf("%T:%#v", state, state)
+}
+
+// NodeKey identifies an exploration node for safe pruning:
+//
+//	State fingerprint + sorted enabled transitions
+//
+// Same business fields with different worker progress must NOT collide:
+// scenarios are expected to embed progress in State; Enabled is included
+// so the prune key tracks the remaining future, not only data fields.
+func NodeKey(state scenario.State, enabled []scenario.Transition) string {
+	var b strings.Builder
+	b.WriteString(Fingerprint(state))
+	b.WriteByte('|')
+	for i, t := range enabled {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(string(t.Worker))
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(t.Step))
+	}
+	return b.String()
 }
 
 // Multinomial returns n! / (k1! k2! … km!) where n = sum(ki).
