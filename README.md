@@ -217,9 +217,14 @@ go run ./cmd/rupurace explore --scenario lost-update --minimize -o witness.json
 ## Estado
 
 **0.3.0** — Witness 1-minimal: Explore → Original + Minimal → Replay de ambos,
-misma violación semántica, determinismo. Sin shortest-global ni synctest.
+misma violación semántica, determinismo.
 
-**Next:** adopción sobre Go real; partial-order ideas más adelante. Sin API Go pública.
+**Spike (post-0.3.0):** `spike/synctest/` investigó `testing/synctest` como puente
+a Go real. Veredicto **B**: sirve para tiempo/quiescencia en el harness, **no**
+reemplaza Explore. El puente viable sigue necesitando puntos de control
+explícitos. Ver `spike/synctest/NOTES.md`.
+
+**Next:** diseño mínimo de gates/hooks sobre Go real (hacia 0.4.x). Sin API Go pública.
 
 
 ## Principios
