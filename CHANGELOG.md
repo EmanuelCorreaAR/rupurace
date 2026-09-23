@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.2] - 2026-09-23
+
+### Added
+- Constitutional test: explore → witness → replay preserves invariant, failedAt, schedule
+- Witness JSON round-trip (`witness_v1`): scenario / schedule / invariant / failedAt
+- Direct package tests: `invariant`, `replay`, `report`, `scenario`, `witness`
+
+### Changed
+- README identity vs `go test -race`: conflictive memory access vs orderings that violate a property
+- Local `witness.json` artifacts ignored by git
+
 ## [0.1.1] - 2026-09-23
 
 ### Added

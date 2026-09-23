@@ -65,7 +65,7 @@ go run ./cmd/rupurace --help
 Cuando haya tags de release:
 
 ```bash
-go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.1.1
+go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.1.2
 ```
 
 
@@ -150,11 +150,11 @@ go run ./cmd/rupurace replay witness.json
 
 ## Estado
 
-**0.1.1** — Battery de scenarios cooperativos (`double-withdraw`, `lost-update`,
-`check-then-act`, `init-ordering`) + hardening del motor. Sin API Go pública.
+**0.1.2** — Propiedad constitucional testeada en `replay`; round-trip `witness_v1`
+como producto. Battery de scenarios en `0.1.1`. Motor en `internal/`. Sin API Go pública.
 
-**Next:** tests constitucionales del witness como producto; después bounded
-exploration / state hashing.
+**Next:** bounded exploration / state hashing cuando el espacio crezca; después
+witness minimization. Instrumentar Go concurrente real viene más tarde.
 
 
 ## Principios
@@ -171,6 +171,12 @@ exploration / state hashing.
 ## Qué no es
 
 - **No es un reemplazo de `go test -race`**
+
+| | Pregunta |
+|-|----------|
+| `go test -race` | ¿Ocurrieron accesos de memoria conflictivos? |
+| **RupuRace** | ¿Existe un orden de estas operaciones que viole una propiedad del sistema? Si sí → mostrame cuál, guardalo, reproducilo. |
+
 - No controla goroutines / mutexes / channels del runtime (aún)
 - No es un scheduler de producción
 - No es una plataforma de observabilidad
