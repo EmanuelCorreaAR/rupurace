@@ -1,5 +1,10 @@
 # RupuRace
 
+> **Estado: pausado.** No hay desarrollo activo después de 0.4.1.
+> Investigación de mercado/tesis (detsim, weave, Loom, CHESS, …): el hueco
+> “deterministic concurrency testing for Go” ya está cubierto; la tesis de
+> model checking cooperativo no justifica, sola, seguir como producto.
+
 **Explore schedules. Find invariant violations. Keep the witness.**
 
 Parte de la familia **Rupu**.
@@ -216,15 +221,20 @@ go run ./cmd/rupurace explore --scenario lost-update --minimize -o witness.json
 
 ## Estado
 
-**0.4.1** — Gate model stressed: `ErrNoWaiter` / panic recover / LIMITS.md.
-Quiesce = exit ∨ Await only; mutex/channel block ≠ quiescence.
+**Pausado después de 0.4.1.** El repositorio queda como registro del aprendizaje
+(Explore → Witness → Minimize → gates sobre Go real → límites explícitos).
+No hay roadmap de 0.5+ ni API pública prevista.
 
-**0.4.0** — Real Go execution through cooperative gates.
+Última línea técnica entregada:
 
-**Spike:** `spike/synctest/NOTES.md` — veredicto B.
+| Release | Pregunta | Respuesta |
+|---------|----------|-----------|
+| 0.1 | ¿encontrar y reproducir? | ✓ |
+| 0.2 | ¿explorar sin repetir tanto? | ✓ |
+| 0.3 | ¿mejorar la evidencia? | ✓ |
+| 0.4 | ¿controlar Go real con gates? | ✓ (con `LIMITS.md`) |
 
-**Next:** más demos / semántica del punto de control; CLI cuando el modelo aguante.
-Sin API pública todavía.
+Spike: `spike/synctest/NOTES.md` (veredicto B). Límites del gate: `internal/gate/LIMITS.md`.
 
 
 ## Principios

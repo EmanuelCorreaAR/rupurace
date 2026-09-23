@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Project paused after 0.4.1; no active roadmap (see README Estado)
+
 ## [0.4.1] - 2026-09-23
 
 ### Added
