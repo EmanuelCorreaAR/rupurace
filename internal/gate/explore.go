@@ -111,8 +111,13 @@ func execute(p Program, specs []invariant.Spec, sched scenario.Schedule) (*witne
 		if !contains(en, t) {
 			return nil, fmt.Errorf("gate: step %d transition %s not enabled", i, t)
 		}
-		c.Release(t)
+		if err := c.Release(t); err != nil {
+			return nil, fmt.Errorf("gate: step %d: %w", i, err)
+		}
 		c.Quiesce()
+		if panics := c.Panicked(); len(panics) > 0 {
+			return nil, fmt.Errorf("gate: step %d: worker panicked: %v", i, panics)
+		}
 		built = append(built, t)
 		next[t.Worker]++
 

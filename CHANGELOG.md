@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.1] - 2026-09-23
+
+### Added
+- Adversarial gate suite: early return, never-reached gate, double Release, panic recover, lifecycle exit, nested Awaits, channel-between-gates, context cancel, mutex/chan ≠ quiescence
+- `ErrNoWaiter` / `ErrAlreadyReleased`; `Panicked` / `ParkedKeys`
+- `internal/gate/LIMITS.md` — contract vs known limitations
+
+### Fixed
+- `Release` requires a live waiter (no more silent hang on skipped gates)
+- Worker panics recovered inside `Go` so Explore is not aborted by one SUT panic
+
+### Notes
+- Quiesce still only counts `Await` parks — blocking on mutex/channel is explorer deadlock by design (same lesson as synctest verdict B)
+
 ## [0.4.0] - 2026-09-23
 
 ### Added

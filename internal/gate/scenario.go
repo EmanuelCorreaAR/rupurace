@@ -1,6 +1,8 @@
 package gate
 
 import (
+	"fmt"
+
 	"github.com/EmanuelCorreaAR/rupurace/internal/scenario"
 )
 
@@ -40,8 +42,14 @@ func (r replayScenario) Enabled(st scenario.State) []scenario.Transition {
 
 func (r replayScenario) Apply(st scenario.State, t scenario.Transition) scenario.State {
 	s := st.(*liveState)
-	s.c.Release(t)
+	if err := s.c.Release(t); err != nil {
+		// Scenario.Apply has no error path; illegal live schedules must not be silent.
+		panic(err)
+	}
 	s.c.Quiesce()
+	if panics := s.c.Panicked(); len(panics) > 0 {
+		panic(fmt.Errorf("gate: worker panicked: %v", panics))
+	}
 	n2 := copyNext(s.next)
 	n2[t.Worker]++
 	return &liveState{

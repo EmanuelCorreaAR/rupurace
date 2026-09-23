@@ -1,19 +1,7 @@
-// Package gate is the 0.4.x bridge from real Go goroutines into RupuRace's
-// cooperative schedule model.
-//
-// A Gate is an observable transition: a goroutine parks until RupuRace releases
-// that transition as part of a schedule. Naming is provisional (Gate / Await);
-// the semantic is "this goroutine reached a controllable schedule point".
-//
-// synctest is not required here — Quiesce settles on park/exit. Use synctest in
-// tests when you need a fake clock.
-//
-// Explore creates a fresh world per candidate schedule (side effects do not
-// fork like immutable Scenario.Apply). ReplayScenario is for linear
-// Replay/Minimize only — do not pass it to ExploreExhaustive.
 package gate
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -21,15 +9,25 @@ import (
 	"github.com/EmanuelCorreaAR/rupurace/internal/scenario"
 )
 
+// Sentinel errors for adversarial / malformed worlds.
+var (
+	// ErrNoWaiter means Release was called while no goroutine is parked at that
+	// transition (early return, skipped gate, or schedule ahead of the SUT).
+	ErrNoWaiter = errors.New("gate: no waiter at transition")
+	// ErrAlreadyReleased means the one-shot gate was opened twice.
+	ErrAlreadyReleased = errors.New("gate: transition already released")
+)
+
 // Controller mediates named transitions between the SUT and the explorer.
 type Controller struct {
-	mu      sync.Mutex
-	release map[string]chan struct{}
-	parked  map[string]int
-	living  int
-	exited  int
-	waiters []chan struct{}
-	stash   any // per-world demo state (internal)
+	mu       sync.Mutex
+	release  map[string]chan struct{}
+	parked   map[string]int
+	living   int
+	exited   int
+	waiters  []chan struct{}
+	stash    any // per-world demo state (internal)
+	panicked []any
 }
 
 // NewController returns a fresh world controller.
@@ -40,13 +38,19 @@ func NewController() *Controller {
 	}
 }
 
-// Go starts a goroutine tracked for Quiesce.
+// Go starts a goroutine tracked for Quiesce. Panics inside fn are recovered so
+// one worker cannot abort the whole Explore process; see Panicked.
 func (c *Controller) Go(fn func()) {
 	c.mu.Lock()
 	c.living++
 	c.mu.Unlock()
 	go func() {
 		defer func() {
+			if rec := recover(); rec != nil {
+				c.mu.Lock()
+				c.panicked = append(c.panicked, rec)
+				c.mu.Unlock()
+			}
 			c.mu.Lock()
 			c.exited++
 			c.broadcastLocked()
@@ -54,6 +58,29 @@ func (c *Controller) Go(fn func()) {
 		}()
 		fn()
 	}()
+}
+
+// Panicked returns recover() values from worker goroutines (copy).
+func (c *Controller) Panicked() []any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]any, len(c.panicked))
+	copy(out, c.panicked)
+	return out
+}
+
+// ParkedKeys returns transitions that currently have waiters (sorted).
+func (c *Controller) ParkedKeys() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var keys []string
+	for k, n := range c.parked {
+		if n > 0 {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Await parks until Release(t) for this world. This is the instrumentation point.
@@ -75,27 +102,39 @@ func (c *Controller) Await(t scenario.Transition) {
 
 // Release opens transition t and waits until the waiter has left that Await.
 // Each transition is one-shot per Controller.
-func (c *Controller) Release(t scenario.Transition) {
+//
+// Contract: call Quiesce first. Release returns ErrNoWaiter if nobody is parked
+// at t (skipped gate / early exit / wrong schedule). Returns ErrAlreadyReleased
+// on a second open of the same transition.
+func (c *Controller) Release(t scenario.Transition) error {
 	key := t.String()
 	c.mu.Lock()
-	ch := c.ensureLocked(key)
-	select {
-	case <-ch:
-		// already closed
-	default:
-		close(ch)
+	ch, exists := c.release[key]
+	if exists {
+		select {
+		case <-ch:
+			c.mu.Unlock()
+			return fmt.Errorf("%w: %s", ErrAlreadyReleased, key)
+		default:
+		}
+	} else {
+		ch = make(chan struct{})
+		c.release[key] = ch
 	}
+	if c.parked[key] == 0 {
+		c.mu.Unlock()
+		return fmt.Errorf("%w: %s (parked=%v)", ErrNoWaiter, key, c.parkedKeysLocked())
+	}
+	close(ch)
 	c.broadcastLocked()
 	c.mu.Unlock()
 
-	// Must wait for the parked goroutine to observe the close. Otherwise a
-	// tight Release/Quiesce loop on the explorer goroutine can starve workers
-	// and Quiesce stays "settled" on stale park counts.
+	// Wait for the parked goroutine to observe the close (avoid explorer starvation).
 	for {
 		c.mu.Lock()
 		if c.parked[key] == 0 {
 			c.mu.Unlock()
-			return
+			return nil
 		}
 		wait := make(chan struct{})
 		c.waiters = append(c.waiters, wait)
@@ -104,7 +143,22 @@ func (c *Controller) Release(t scenario.Transition) {
 	}
 }
 
+func (c *Controller) parkedKeysLocked() []string {
+	var keys []string
+	for k, n := range c.parked {
+		if n > 0 {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // Quiesce blocks until every tracked goroutine has either exited or parked in Await.
+//
+// Limitation: a goroutine blocked on something other than Await (mutex, channel
+// receive, I/O, …) is not “parked” — Quiesce will not return. That is deadlock
+// from the explorer’s point of view, not quiescence.
 func (c *Controller) Quiesce() {
 	for {
 		c.mu.Lock()
