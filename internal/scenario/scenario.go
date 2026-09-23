@@ -1,25 +1,27 @@
 // Package scenario defines abstract concurrent programs under test.
 //
-// A Scenario exposes enabled transitions from a State; Apply advances state.
-// The core does not control real goroutines yet.
+// Pipeline:
+//
+//	Scenario → possible transitions → schedule explorer → state transition
+//	  → invariant check → (OK continue | FAIL → witness → replay)
+//
+// Transitions are cooperative and explicit: RupuRace schedules which worker
+// runs which step index. It does not depend on the Go runtime scheduler.
 package scenario
 
 import "fmt"
 
-// ActorID names a concurrent participant in a scenario.
-type ActorID string
+// WorkerID names a concurrent participant in a scenario.
+type WorkerID string
 
-// StepID names a discrete step an actor may take.
-type StepID string
-
-// Transition is one scheduled step: which actor runs which step.
+// Transition is one scheduled step: which worker runs which step index.
 type Transition struct {
-	Actor ActorID
-	Step  StepID
+	Worker WorkerID
+	Step   int
 }
 
 func (t Transition) String() string {
-	return fmt.Sprintf("%s:%s", t.Actor, t.Step)
+	return fmt.Sprintf("%s:%d", t.Worker, t.Step)
 }
 
 // Schedule is an ordered sequence of transitions (a witnessable execution).

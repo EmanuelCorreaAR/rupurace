@@ -11,7 +11,7 @@ import (
 
 // Run re-executes w.Schedule against sc and re-checks invariants.
 // It does not consult an RNG: the schedule is the sole source of ordering.
-func Run(sc scenario.Scenario, invariants []invariant.Invariant, w witness.Witness) (witness.Result, error) {
+func Run(sc scenario.Scenario, specs []invariant.Spec, w witness.Witness) (witness.Result, error) {
 	state := sc.Initial()
 	schedule := make(scenario.Schedule, 0, len(w.Schedule))
 
@@ -23,12 +23,18 @@ func Run(sc scenario.Scenario, invariants []invariant.Invariant, w witness.Witne
 		state = sc.Apply(state, t)
 		schedule = append(schedule, t)
 
-		if got := invariant.Check(state, schedule, invariants); got != nil {
-			return witness.Result{Passed: false, Steps: i + 1, Schedule: schedule, Witness: got}, nil
+		if got := invariant.Check(state, schedule, specs); got != nil {
+			return witness.Result{
+				Passed:   false,
+				Steps:    i + 1,
+				Schedule: schedule,
+				Witness:  got,
+				Strategy: "replay",
+			}, nil
 		}
 	}
 
-	return witness.Result{Passed: true, Steps: len(schedule), Schedule: schedule}, nil
+	return witness.Result{Passed: true, Steps: len(schedule), Schedule: schedule, Strategy: "replay"}, nil
 }
 
 func containsTransition(enabled []scenario.Transition, want scenario.Transition) bool {

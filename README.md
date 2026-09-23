@@ -4,22 +4,34 @@
 
 Parte de la familia **Rupu**.
 
-Testing de concurrencia determinista para Go.
+Systematic schedule exploration for Go programs with deterministic failure replay.
 
-RupuRace explora schedules de ejecución alternativos para exponer
-fallos dependientes del orden y convertirlos en witnesses reproducibles.
+RupuRace explora schedules de ejecución sobre escenarios **cooperativos**
+(explícitos) para exponer fallos dependientes del orden y convertirlos en
+witnesses reproducibles.
 
 ```text
-concurrent execution
-        ↓
-schedule exploration
-        ↓
-invariant violation
-        ↓
-reproducible witness
-        ↓
-deterministic replay
+Scenario
+   ↓
+Possible transitions
+   ↓
+Schedule explorer
+   ↓
+State transition
+   ↓
+Invariant check
+   │
+   ├── OK → continue exploring
+   │
+   └── FAIL
+          ↓
+       Witness
+          ↓
+       Replay
 ```
+
+No controla goroutines arbitrarias del runtime de Go. Controla pasos
+explícitos por worker (`A0`, `A1`, `B0`, …) y elige el orden.
 
 
 ## Por qué
@@ -29,39 +41,109 @@ disparó el fallo puede no volver a ocurrir nunca.
 
 RupuRace toma otro enfoque:
 
-1. Explorar schedules de ejecución de forma deliberada.
-2. Chequear invariantes después de cada transición de estado.
+1. Explorar schedules de forma deliberada.
+2. Chequear invariantes después de cada transición.
 3. Capturar el schedule que causó el fallo.
-4. Reproducir ese fallo exacto de forma determinista.
+4. Reproducir ese fallo exacto, siempre igual.
 
 El objetivo no es solo encontrar un fallo.
 
 El objetivo es conservar la evidencia necesaria para reproducirlo.
 
 
+## Install
+
+Requiere Go 1.22+.
+
+```bash
+git clone https://github.com/EmanuelCorreaAR/rupurace.git
+cd rupurace
+go test ./...
+go run ./cmd/rupurace --help
+```
+
+Cuando haya tags de release:
+
+```bash
+go install github.com/EmanuelCorreaAR/rupurace/cmd/rupurace@v0.1.0
+```
+
+
+## Quick start
+
+El corazón del proyecto:
+
+```bash
+# encuentra un bug y guarda el witness
+go run ./cmd/rupurace explore -o witness.json
+
+# Reproduce el mismo fallo, siempre
+go run ./cmd/rupurace replay witness.json
+```
+
+Scenario default: `double-withdraw` — 2 workers × 3 steps, balance compartido,
+invariante `balance >= 0`, exploración **exhaustiva**.
+
+```bash
+go run ./cmd/rupurace explore --json
+go run ./cmd/rupurace explore --fail-on-violation   # exit 2 si hay violación
+```
+
+
+## Witness
+
+```json
+{
+  "scenario": "double-withdraw",
+  "schedule": [
+    {"worker": "A", "step": 0},
+    {"worker": "B", "step": 0},
+    {"worker": "A", "step": 1},
+    {"worker": "B", "step": 1},
+    {"worker": "A", "step": 2},
+    {"worker": "B", "step": 2}
+  ],
+  "invariant": "balance >= 0",
+  "failedAt": 6
+}
+```
+
+`rupurace replay witness.json` falla en la misma transición, cada vez.
+
+
+## Commands
+
+| Command | Rol |
+|---------|-----|
+| `explore` | Explora schedules; con `-o` escribe witness al fallar |
+| `replay` | Reejecuta un witness de forma determinista |
+| `version` | Muestra la versión |
+
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Usage or I/O error |
+| `2` | Invariant violation with `--fail-on-violation` |
+
+
 ## Estado
 
-Desarrollo temprano.
+**0.1.0** — Modelo cooperativo; `double-withdraw`; exploración exhaustiva;
+witness + replay determinista. Motor en `internal/`. Sin API Go pública.
 
-Milestone inicial:
-
-- scheduler determinista
-- ejecución de escenarios
-- chequeo de invariantes
-- witnesses de fallo
-- replay determinista
-
-El motor vive bajo `internal/`. Todavía no hay API Go pública ni comandos
-de CLI — ambos aparecen solo cuando existan y estén testeados.
-
-Module path: `github.com/EmanuelCorreaAR/rupurace`
+**Next:** más scenarios; más adelante (no ahora) poda / hashing de estados /
+partial-order reduction. Instrumentar Go concurrente real viene después de
+que este núcleo quede sólido.
 
 
 ## Principios
 
 - Mismo scenario + misma configuración → mismo resultado
+- Transiciones cooperativas explícitas (no el scheduler de Go)
 - Sin dependencia del wall-clock
-- Sin dependencia del scheduler de Go
 - Los fallos producen evidencia inspeccionable
 - La reproducción es una feature de primer nivel
 - Local-first
@@ -71,6 +153,7 @@ Module path: `github.com/EmanuelCorreaAR/rupurace`
 ## Qué no es
 
 - **No es un reemplazo de `go test -race`**
+- No controla goroutines / mutexes / channels del runtime (aún)
 - No es un scheduler de producción
 - No es una plataforma de observabilidad
 - No es distributed tracing

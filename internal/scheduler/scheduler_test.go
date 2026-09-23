@@ -1,74 +1,120 @@
 package scheduler_test
 
 import (
-	"errors"
 	"testing"
 
-	"github.com/EmanuelCorreaAR/rupurace/internal/invariant"
-	"github.com/EmanuelCorreaAR/rupurace/internal/scenario"
+	"github.com/EmanuelCorreaAR/rupurace/internal/demos"
+	"github.com/EmanuelCorreaAR/rupurace/internal/replay"
 	"github.com/EmanuelCorreaAR/rupurace/internal/scheduler"
 	"github.com/EmanuelCorreaAR/rupurace/internal/witness"
 )
 
-func maxValue(limit int) invariant.Invariant {
-	return func(st scenario.State) error {
-		cs := st.(scenario.CounterState)
-		if cs.Value > limit {
-			return errors.New("counter exceeded limit")
-		}
-		return nil
+func TestExhaustive_DoubleWithdraw_FindsBug(t *testing.T) {
+	loaded, err := demos.Load("double-withdraw", map[string]any{
+		"balance": 100,
+		"amount":  60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{})
+	if found.Passed || found.Witness == nil {
+		t.Fatalf("expected a violation, got %+v", found)
+	}
+	if found.Witness.Invariant != "balance >= 0" {
+		t.Fatalf("invariant: %q", found.Witness.Invariant)
+	}
+	if found.Witness.FailedAt != len(found.Witness.Schedule) {
+		t.Fatalf("failedAt=%d len=%d", found.Witness.FailedAt, len(found.Witness.Schedule))
 	}
 }
 
-func TestExplore_Deterministic(t *testing.T) {
-	sc := scenario.Counter{QuotaA: 3, QuotaB: 3}
-	cfg := scheduler.Config{Seed: 42, MaxSteps: 64}
-	invs := []invariant.Invariant{maxValue(100)}
+func TestExhaustive_DeterministicWitness(t *testing.T) {
+	loaded, err := demos.Load("double-withdraw", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	first := scheduler.Explore(sc, invs, cfg)
+	first := scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{})
 	for i := 0; i < 20; i++ {
-		got := scheduler.Explore(sc, invs, cfg)
-		if !resultsEqual(first, got) {
-			t.Fatalf("run %d diverged from first result\nfirst=%+v\ngot=%+v", i+1, first, got)
+		got := scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{})
+		if !witnessesEqual(first.Witness, got.Witness) {
+			t.Fatalf("run %d diverged\nfirst=%+v\ngot=%+v", i+1, first.Witness, got.Witness)
 		}
 	}
 }
 
-func TestExplore_DifferentSeedsCanDiffer(t *testing.T) {
-	sc := scenario.Counter{QuotaA: 4, QuotaB: 4}
-	invs := []invariant.Invariant{maxValue(100)}
+func TestReplay_SameFailureEveryTime(t *testing.T) {
+	loaded, err := demos.Load("double-withdraw", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	a := scheduler.Explore(sc, invs, scheduler.Config{Seed: 1, MaxSteps: 64})
-	b := scheduler.Explore(sc, invs, scheduler.Config{Seed: 2, MaxSteps: 64})
+	found := scheduler.ExploreExhaustive(loaded.Scene, loaded.Specs, scheduler.ExhaustiveConfig{})
+	if found.Witness == nil {
+		t.Fatal("expected witness")
+	}
 
-	if schedulesEqual(a.Schedule, b.Schedule) {
-		t.Fatal("expected different seeds to produce different schedules for this scenario")
+	var first witness.Result
+	for i := 0; i < 20; i++ {
+		got, err := replay.Run(loaded.Scene, loaded.Specs, *found.Witness)
+		if err != nil {
+			t.Fatalf("replay: %v", err)
+		}
+		if got.Passed || got.Witness == nil {
+			t.Fatalf("replay should fail, got %+v", got)
+		}
+		if got.Witness.FailedAt != found.Witness.FailedAt {
+			t.Fatalf("failedAt mismatch: explore=%d replay=%d", found.Witness.FailedAt, got.Witness.FailedAt)
+		}
+		if got.Witness.Invariant != found.Witness.Invariant {
+			t.Fatalf("invariant mismatch: %q vs %q", found.Witness.Invariant, got.Witness.Invariant)
+		}
+		if i == 0 {
+			first = got
+			continue
+		}
+		if !witnessesEqual(first.Witness, got.Witness) {
+			t.Fatalf("replay %d diverged", i+1)
+		}
 	}
 }
 
-func resultsEqual(a, b witness.Result) bool {
-	if a.Passed != b.Passed || a.Steps != b.Steps {
-		return false
+func TestSeeded_Deterministic(t *testing.T) {
+	loaded, err := demos.Load("counter", map[string]any{
+		"quota_a": 3, "quota_b": 3, "max_value": 100,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !schedulesEqual(a.Schedule, b.Schedule) {
-		return false
+	cfg := scheduler.Config{Seed: 42, MaxSteps: 64}
+	first := scheduler.Explore(loaded.Scene, loaded.Specs, cfg)
+	for i := 0; i < 10; i++ {
+		got := scheduler.Explore(loaded.Scene, loaded.Specs, cfg)
+		if first.Passed != got.Passed || len(first.Schedule) != len(got.Schedule) {
+			t.Fatalf("diverged on run %d", i+1)
+		}
+		for j := range first.Schedule {
+			if first.Schedule[j] != got.Schedule[j] {
+				t.Fatalf("schedule diverged at %d", j)
+			}
+		}
 	}
-	if (a.Witness == nil) != (b.Witness == nil) {
-		return false
-	}
-	if a.Witness == nil {
-		return true
-	}
-	return a.Witness.Violation == b.Witness.Violation &&
-		schedulesEqual(a.Witness.Schedule, b.Witness.Schedule)
 }
 
-func schedulesEqual(a, b scenario.Schedule) bool {
-	if len(a) != len(b) {
+func witnessesEqual(a, b *witness.Witness) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.Invariant != b.Invariant || a.FailedAt != b.FailedAt || a.Violation != b.Violation {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	if len(a.Schedule) != len(b.Schedule) {
+		return false
+	}
+	for i := range a.Schedule {
+		if a.Schedule[i] != b.Schedule[i] {
 			return false
 		}
 	}
